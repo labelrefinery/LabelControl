@@ -122,6 +122,16 @@ struct StepRow(Copyable, Movable):
 
 
 @fieldwise_init
+struct ReviewTask(Copyable, Movable):
+    var id: String
+    var invocation_id: String
+    var labels_path: String
+    var status: String
+    var awakeable_id: String
+    var created_at: String
+
+
+@fieldwise_init
 struct DecisionRow(Copyable, Movable):
     var seq: Int
     var chosen: String
@@ -226,6 +236,72 @@ struct Store(Movable):
                 )
             )
         return out^
+
+    def open_reviews(mut self) raises -> List[ReviewTask]:
+        var out = List[ReviewTask]()
+        var q = self.db.prepare(
+            "SELECT id, invocation_id, labels_path, status,"
+            " COALESCE(awakeable_id,''), created_at"
+            " FROM review_task WHERE status = 'open' ORDER BY created_at"
+        )
+        while True:
+            var row = q.step()
+            if not row:
+                break
+            ref r = row.value()
+            out.append(
+                ReviewTask(
+                    r.text_val(0),
+                    r.text_val(1),
+                    r.text_val(2),
+                    r.text_val(3),
+                    r.text_val(4),
+                    r.text_val(5),
+                )
+            )
+        return out^
+
+    def review(mut self, task_id: String) raises -> Optional[ReviewTask]:
+        var q = self.db.prepare(
+            "SELECT id, invocation_id, labels_path, status,"
+            " COALESCE(awakeable_id,''), created_at"
+            " FROM review_task WHERE id = ?"
+        )
+        q.bind_text(1, task_id)
+        var row = q.step()
+        if not row:
+            return None
+        ref r = row.value()
+        return Optional(
+            ReviewTask(
+                r.text_val(0),
+                r.text_val(1),
+                r.text_val(2),
+                r.text_val(3),
+                r.text_val(4),
+                r.text_val(5),
+            )
+        )
+
+    def add_edit(
+        mut self,
+        task_id: String,
+        track_id: String,
+        field: String,
+        old_value: String,
+        new_value: String,
+    ) raises:
+        var q = self.db.prepare(
+            "INSERT INTO review_edit"
+            " (review_task_id, track_id, field, old_value, new_value)"
+            " VALUES (?, ?, ?, ?, ?)"
+        )
+        q.bind_text(1, task_id)
+        q.bind_text(2, track_id)
+        q.bind_text(3, field)
+        q.bind_text(4, old_value)
+        q.bind_text(5, new_value)
+        _ = q.step()
 
     def create_invocation(
         mut self, scene_path: String, seed: Int, work_dir: String

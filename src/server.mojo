@@ -28,7 +28,7 @@ from std.os import getenv, makedirs
 from std.os.path import exists
 from std.random import random_ui64, seed as seed_rng
 
-from store import DecisionRow, Invocation, StepRow, Store
+from store import DecisionRow, Invocation, ReviewTask, StepRow, Store
 
 
 comptime OPS_DEFAULT = "/private/tmp/labelrefinery/ops.db"
@@ -98,7 +98,7 @@ def page(title: String, body: String) -> String:
         " — label control</title><style>",
         STYLE,
         "</style></head><body><header><div class=wrap>",
-        "<a href='/'>label control</a></div></header>",
+        "<a href='/'>label control</a> · <a href='/review'>review queue</a></div></header>",
         "<div class=wrap>",
         body,
         "</div></body></html>",
@@ -301,6 +301,215 @@ def detail(req: Request) raises -> Response:
     return html(page(String("Run ") + inv.scene_path, body))
 
 
+def _hexval(c: String) -> Int:
+    if c >= "0" and c <= "9":
+        return Int(ord(c)) - 48
+    if c >= "a" and c <= "f":
+        return Int(ord(c)) - 87
+    if c >= "A" and c <= "F":
+        return Int(ord(c)) - 55
+    return -1
+
+
+def url_decode(s: String) -> String:
+    """`%XX` and `+` decoding for an application/x-www-form-urlencoded value."""
+    var out = String("")
+    var i = 0
+    var n = s.byte_length()
+    while i < n:
+        var c = String(s[byte=i])
+        if c == "+":
+            out += " "
+            i += 1
+        elif c == "%" and i + 2 < n:
+            var hi = _hexval(String(s[byte=i + 1]))
+            var lo = _hexval(String(s[byte=i + 2]))
+            if hi < 0 or lo < 0:
+                out += c
+                i += 1
+            else:
+                out += String(chr(hi * 16 + lo))
+                i += 3
+        else:
+            out += c
+            i += 1
+    return out^
+
+
+def parse_form(body: String) -> Dict[String, String]:
+    var out = Dict[String, String]()
+    for pair in body.split("&"):
+        var text = String(pair)
+        if text.byte_length() == 0:
+            continue
+        var parts = text.split("=")
+        if len(parts) < 2:
+            continue
+        var key = url_decode(String(parts[0]))
+        var value = String("")
+        for i in range(1, len(parts)):
+            if i > 1:
+                value += "="
+            value += String(parts[i])
+        if key.byte_length() > 0:
+            out[key] = url_decode(value)
+    return out^
+
+
+def form_get(form: Dict[String, String], key: String) -> String:
+    try:
+        return form[key]
+    except:
+        return String("")
+
+
+def read_tracks(labels_path: String) raises -> List[List[String]]:
+    """Distinct `[track_id, cls, rows]` from a tracker CSV, in first-seen order.
+
+    A reviewer judges objects, not rows -- a track is one thing that was there
+    for a while, and its class is a property of the thing.
+    """
+    var handle = open(labels_path, "r")
+    var text = handle.read()
+    handle.close()
+
+    var ids = List[String]()
+    var classes = List[String]()
+    var counts = List[Int]()
+    var first = True
+    for raw in text.split("\n"):
+        var line = String(String(raw).strip())
+        if line.byte_length() == 0:
+            continue
+        if first:
+            first = False
+            continue
+        var cells = line.split(",")
+        if len(cells) < 2:
+            continue
+        var tid = String(cells[0])
+        var found = -1
+        for k in range(len(ids)):
+            if ids[k] == tid:
+                found = k
+        if found < 0:
+            ids.append(tid)
+            classes.append(String(cells[1]))
+            counts.append(1)
+        else:
+            counts[found] += 1
+
+    var out = List[List[String]]()
+    for k in range(len(ids)):
+        var one = List[String]()
+        one.append(ids[k])
+        one.append(classes[k])
+        one.append(String(counts[k]))
+        out.append(one^)
+    return out^
+
+
+def review_queue(req: Request) raises -> Response:
+    var store = Store(ops_path())
+    var tasks = store.open_reviews()
+    var body = String("<h1>Review queue</h1>")
+    if len(tasks) == 0:
+        body += "<p class=empty>Nothing waiting. The loop is not blocked on you.</p>"
+        return html(page("Review queue", body))
+    body += (
+        "<table><thead><tr><th>opened</th><th>labels</th><th></th>"
+        "</tr></thead><tbody>"
+    )
+    for t in tasks:
+        body += String(
+            "<tr><td class=mono>",
+            esc(t.created_at),
+            "</td><td class=mono>",
+            esc(t.labels_path),
+            "</td><td><a href='/review/",
+            esc(t.id),
+            "'>review →</a></td></tr>",
+        )
+    body += "</tbody></table>"
+    return html(page("Review queue", body))
+
+
+def review_one(req: Request) raises -> Response:
+    var id = String(req.param("id"))
+    var store = Store(ops_path())
+    var found = store.review(id)
+    if not found:
+        return not_found("no such review")
+    ref task = found.value()
+
+    var tracks = read_tracks(task.labels_path)
+    var body = String("<h1>Review labels</h1>")
+    body += String(
+        "<p><code>",
+        esc(task.labels_path),
+        "</code> · ",
+        len(tracks),
+        " tracks · the loop is suspended until you submit.</p>",
+    )
+    body += String("<form method=post action='/review/", esc(task.id), "'>")
+    body += (
+        "<table><thead><tr><th>track</th><th>rows</th><th>current</th>"
+        "<th>class</th></tr></thead><tbody>"
+    )
+    for t in tracks:
+        body += String(
+            "<tr><td class=mono>",
+            esc(t[0]),
+            "</td><td class=mono>",
+            esc(t[2]),
+            "</td><td class=mono>",
+            esc(t[1]),
+            "</td><td><input name='cls_",
+            esc(t[0]),
+            "' value='",
+            esc(t[1]),
+            "' style='font:inherit;padding:.2rem .4rem;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--ink)'></td></tr>",
+        )
+    body += "</tbody></table>"
+    body += (
+        "<div class=actions><button class=button type=submit>"
+        "Submit and resume the loop</button></div></form>"
+    )
+    return html(page("Review", body))
+
+
+def submit_review(req: Request) raises -> Response:
+    """Record what changed, then release the loop.
+
+    Only fields the reviewer actually altered become edits: submitting an
+    unchanged form should be a no-op, not a rewrite of every row.
+    """
+    var id = String(req.param("id"))
+    var store = Store(ops_path())
+    var found = store.review(id)
+    if not found:
+        return not_found("no such review")
+    ref task = found.value()
+
+    var tracks = read_tracks(task.labels_path)
+    var form = parse_form(req.text())
+    var changes = 0
+    for t in tracks:
+        var field = String("cls_") + t[0]
+        var submitted = form_get(form, field)
+        if submitted.byte_length() == 0 or submitted == t[1]:
+            continue
+        store.add_edit(task.id, t[0], String("cls"), t[1], submitted)
+        changes += 1
+
+    var client = HttpClient()
+    _ = client.post(
+        ingress() + "/restate/awakeables/" + task.awakeable_id + "/resolve",
+        String('"reviewed:') + String(changes) + '"',
+    )
+    return redirect("/review")
+
+
 def new_scene(req: Request) raises -> Response:
     """Start a run on a fresh random seed. Generation itself is a stage."""
     var seed = Int(random_ui64(1, 100000))
@@ -338,6 +547,9 @@ def main() raises:
     r.get("/invocations/:id", detail)
     r.post("/scenes/new", new_scene)
     r.post("/invocations/:id/step", step_once)
+    r.get("/review", review_queue)
+    r.get("/review/:id", review_one)
+    r.post("/review/:id", submit_review)
 
     var addr = SocketAddr.localhost(10001)
     print("label control on http://127.0.0.1:10001 — ops.db:", ops_path())
