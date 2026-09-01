@@ -1,0 +1,41 @@
+[workspace]
+name = "labelcontrol"
+version = "0.1.0"
+authors = ["Marius Seritan <marius@seritan.net>"]
+description = "Local control site for the labelrefinery auto-labeling loop"
+preview = ["pixi-build"]
+channels = [
+    "https://conda.modular.com/max-nightly",
+    "conda-forge",
+]
+platforms = ["osx-arm64"]
+
+[dependencies]
+mojo = "==1.0.0"
+# std.gpu moved into `max` in 1.0, and the json sibling flare needs imports it.
+max = "==26.5.0"
+# flare is consumed by SOURCE PATH (-I), not as a package: its own pixi build
+# backend needs a newer pixi than this machine has, and millfolio hit the same
+# wall. Consuming by path also means flare's `mojo ==1.0.0b1` pin does not
+# apply, so this env can stay on stable alongside sqlite-mojo.
+openssl          = ">=3.6.1,<4"
+ca-certificates  = ">=2025.1.31"
+zlib             = ">=1.3.1,<2"
+libbrotlicommon  = ">=1,<2"
+libbrotlidec     = ">=1,<2"
+libbrotlienc     = ">=1,<2"
+# The ops database the orchestrator writes. This site only reads it.
+sqlite-mojo = { git = "https://github.com/magmalake/sqlite.mojo" }
+libsqlite = ">=3.45,<4"
+
+[activation.env]
+# flare and its json dependency come from the millfolio checkout, which is
+# pinned at flare's "Mojo 1.0.0 / MAX 26.5.0 -- the release" commit. The
+# standalone dev/flare checkout is months older and does not compile here.
+LC_INCLUDES = "-I src -I ../../millfolio/flare -I ../../millfolio/json"
+
+[tasks]
+# flare's TLS/HTTP C shims must land in THIS env's $CONDA_PREFIX/lib.
+flare-ffi = "bash -c 'source ../../millfolio/flare/flare/tls/ffi/build.sh; source ../../millfolio/flare/flare/http/ffi/build.sh'"
+build = { cmd = "mojo build $LC_INCLUDES src/server.mojo -o build/labelcontrol", description = "Build the control site" }
+serve = { cmd = "./build/labelcontrol", depends-on = ["build"], description = "Serve on 127.0.0.1:10001" }
