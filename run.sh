@@ -19,6 +19,7 @@ export LABELCONTROL_SITEGEN=${LABELCONTROL_SITEGEN:-$LR/sitegen}
 # Serving through a tunnel? The public hostname must be here, because the
 # tunnel forwards the original Host and anything unlisted gets a 403.
 export LABELCONTROL_ALLOWED_HOSTS=${LABELCONTROL_ALLOWED_HOSTS:-}
+export LABELCONTROL_PORT=${LABELCONTROL_PORT:-20000}
 
 stop() {
   pkill -f "build/labelcontrol" 2>/dev/null || true
@@ -52,9 +53,9 @@ echo "starting the site…"
 (cd $HERE && pixi run serve > $CTL/site.log 2>&1 &)
 sleep 10
 
-if curl -sS -o /dev/null --max-time 10 http://127.0.0.1:10001/; then
+if curl -sS -o /dev/null --max-time 10 http://127.0.0.1:$LABELCONTROL_PORT/; then
   echo
-  echo "  label control:  http://127.0.0.1:10001"
+  echo "  label control:  http://127.0.0.1:$LABELCONTROL_PORT"
   echo "  restate UI:     http://127.0.0.1:9070"
   echo "  logs:           $CTL/*.log"
   echo

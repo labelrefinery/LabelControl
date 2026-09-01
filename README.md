@@ -10,7 +10,8 @@ pixi run flare-ffi     # once: build flare's C shims into this env
 ./run.sh stop
 ```
 
-`./run.sh` prints <http://127.0.0.1:10001> when it is up. To run only the site
+`./run.sh` prints <http://127.0.0.1:20000> when it is up. `LABELCONTROL_PORT`
+changes it. To run only the site
 against an existing database, `pixi run serve`.
 
 Four processes. The executor and the orchestrator are separate Restate
@@ -31,7 +32,7 @@ To serve it through a Cloudflare Tunnel, allow the public name:
 
 ```sh
 LABELCONTROL_ALLOWED_HOSTS=demo.labelrefinery.org ./run.sh
-cloudflared tunnel --url http://127.0.0.1:10001 run <tunnel>
+cloudflared tunnel --url http://127.0.0.1:20000 run <tunnel>
 ```
 
 **Put an access policy in front of it.** Nothing here authenticates. The

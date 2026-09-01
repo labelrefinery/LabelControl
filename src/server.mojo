@@ -5,7 +5,7 @@ share a process with the orchestrator and does not call it directly — the
 database is the whole interface — except for the two buttons, which POST to the
 Restate ingress.
 
-    pixi run serve            # http://127.0.0.1:10001
+    pixi run serve            # http://127.0.0.1:20000
 
 Loopback only by default, with a Host allow-list, following
 millfolio/vault/app/server: binding 127.0.0.1 stops remote connections, but a
@@ -128,6 +128,17 @@ def redirect(location: String) raises -> Response:
     return r^
 
 
+def port() -> UInt16:
+    """Listen port. 20000 by default; `LABELCONTROL_PORT` overrides."""
+    var raw = getenv("LABELCONTROL_PORT", "")
+    if raw.byte_length() == 0:
+        return 20000
+    try:
+        return UInt16(Int(Float64(raw)))
+    except:
+        return 20000
+
+
 def ops_path() -> String:
     var v = getenv("LABELCONTROL_OPS", "")
     return v if v != "" else String(OPS_DEFAULT)
@@ -189,7 +200,7 @@ def allowed_hosts() -> List[String]:
 def host_allowed(req: Request) raises -> Bool:
     """True when the request's Host is one we answer to.
 
-    The port is stripped before comparing, so `127.0.0.1:10001` matches
+    The port is stripped before comparing, so `127.0.0.1:20000` matches
     `127.0.0.1`. A request with no Host at all is refused rather than allowed:
     every real client sends one.
     """
@@ -629,8 +640,13 @@ def main() raises:
     r.get("/review/:id", review_one)
     r.post("/review/:id", submit_review)
 
-    var addr = SocketAddr.localhost(10001)
-    print("label control on http://127.0.0.1:10001 — ops.db:", ops_path())
+    var listen = port()
+    var addr = SocketAddr.localhost(listen)
+    print(
+        String("label control on http://127.0.0.1:") + String(listen),
+        "— ops.db:",
+        ops_path(),
+    )
     var hosts = allowed_hosts()
     var names = String("")
     for i in range(len(hosts)):
