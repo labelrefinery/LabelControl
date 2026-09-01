@@ -60,6 +60,7 @@ td.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.85r
 .pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.78rem;
 font-weight:600;border:1px solid var(--border)}
 .ok{color:var(--accent-3)}.failed{color:var(--accent-2)}.running{color:var(--accent)}
+.waiting{color:var(--accent-2);border-color:var(--accent-2)}
 .exec-mojo{color:var(--accent)}.exec-subprocess{color:var(--ink-3)}
 .exec-inproc{color:var(--accent-3)}
 .button{display:inline-block;background:var(--accent);color:#fff;border:0;
@@ -168,6 +169,11 @@ def status_class(s: String) -> String:
         return String("ok")
     if s == "failed":
         return String("failed")
+    if s == "waiting":
+        # A run blocked on a person is not in trouble and not making progress.
+        # Giving it its own colour is the difference between "go look at the
+        # review queue" and "something broke".
+        return String("waiting")
     return String("running")
 
 
@@ -175,7 +181,17 @@ def timeline(req: Request) raises -> Response:
     var store = Store(ops_path())
     var invs = store.invocations(50)
 
+    var waiting = len(store.open_reviews())
     var body = String("<h1>Runs</h1>")
+    if waiting > 0:
+        body += String(
+            "<p><a href='/review'><strong>",
+            waiting,
+            " run",
+            "" if waiting == 1 else "s",
+            " waiting on you</strong></a> — the loop is stopped until you"
+            " answer.</p>",
+        )
     body += (
         "<form method=post action='/scenes/new' class=actions>"
         "<button class=button type=submit>New random scene</button></form>"

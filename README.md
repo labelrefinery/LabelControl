@@ -6,8 +6,16 @@ what order, and what the router was choosing between. A
 
 ```sh
 pixi run flare-ffi     # once: build flare's C shims into this env
-pixi run serve         # http://127.0.0.1:10001
+./run.sh               # everything: restate, executor, orchestrator, site
+./run.sh stop
 ```
+
+`./run.sh` prints <http://127.0.0.1:10001> when it is up. To run only the site
+against an existing database, `pixi run serve`.
+
+Four processes. The executor and the orchestrator are separate Restate
+endpoints on purpose: restate.mojo's driver is single-threaded and deadlocks if
+a handler calls one served by the same process.
 
 Environment: `LABELCONTROL_OPS` (the orchestrator's `ops.db`),
 `LABELCONTROL_WORK` (where run directories go), `LABELCONTROL_SITEGEN`,
