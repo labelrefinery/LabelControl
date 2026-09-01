@@ -35,10 +35,22 @@ LABELCONTROL_ALLOWED_HOSTS=demo.labelrefinery.org ./run.sh
 cloudflared tunnel --url http://127.0.0.1:20000 run <tunnel>
 ```
 
-**Put an access policy in front of it.** Nothing here authenticates. The
-buttons start jobs and resolve reviews, so anyone who can reach it can spend
-your CPU and edit your labels. Cloudflare Access with an email policy is the
-smallest thing that closes that.
+**Nothing here authenticates.** For a public deployment, run it read-only:
+
+```sh
+LABELCONTROL_READONLY=1 LABELCONTROL_ALLOWED_HOSTS=demo.labelrefinery.org ./run.sh
+```
+
+That serves the timeline, the run detail and the review queue, and refuses the
+three write endpoints. Writable-and-public means anyone with the URL can start
+runs — one click is a scene generation, a 600-frame geometry pass and a
+training run — and can submit reviews that edit labels. If you want the buttons
+live, put Cloudflare Access in front instead; the startup banner warns when
+writes are enabled and a non-loopback host is allowed.
+
+Cross-site posting is refused independently: a request carrying a foreign
+`Origin` gets a 403, so another site cannot drive the loop through a visitor's
+browser.
 
 ## How it fits
 

@@ -160,6 +160,28 @@ def ingress() -> String:
     return v if v != "" else String("http://127.0.0.1:8080")
 
 
+def pct(s: String) -> String:
+    """Percent-encode the characters that delimit the orchestrator's payload.
+
+    The payload is `key=value&key=value`. A value carrying `&` or `=` would
+    inject parameters -- `ops=` pointing at another database, say. Paths are
+    generated here today so nothing is attacker-controlled, but that is a
+    property of today's code rather than of this function.
+    """
+    var out = String("")
+    for i in range(s.byte_length()):
+        var c = String(s[byte=i])
+        if c == "&":
+            out += "%26"
+        elif c == "=":
+            out += "%3D"
+        elif c == "%":
+            out += "%25"
+        else:
+            out += c
+    return out^
+
+
 def loop_payload(inv: Invocation, sitegen: String) -> String:
     """The `key=value&...` body the orchestrator's `step` handler expects.
 
@@ -171,13 +193,13 @@ def loop_payload(inv: Invocation, sitegen: String) -> String:
         '"ops=',
         ops_path(),
         "&scene=",
-        inv.scene_path,
+        pct(inv.scene_path),
         "&work=",
-        inv.work_dir,
+        pct(inv.work_dir),
         "&sitegen=",
-        sitegen,
+        pct(sitegen),
         "&invocation=",
-        inv.id,
+        pct(inv.id),
         "&seed=",
         inv.seed,
         '"',
@@ -229,6 +251,43 @@ def host_allowed(req: Request) raises -> Bool:
 
 def short_path(path: String) -> String:
     return _short(path, work_root())
+
+
+def read_only() -> Bool:
+    """Writes disabled. Set `LABELCONTROL_READONLY=1` for a public deployment.
+
+    Nothing here authenticates, and the write endpoints are not cheap: one
+    `New random scene` costs a scene generation, a 600-frame geometry pass and
+    a training run, and a review submission edits labels. Public and writable
+    means anyone with the URL spends your machine and edits your data.
+    """
+    var v = getenv("LABELCONTROL_READONLY", "")
+    return v == "1" or v == "true" or v == "yes"
+
+
+def origin_ok(req: Request) raises -> Bool:
+    """A state-changing request must come from a page we serve, or no page.
+
+    The Host check defeats DNS rebinding; this defeats cross-site posting. They
+    are different attacks: without this, any website a visitor opens can POST
+    here in their browser and drive the loop. Absent Origin (curl, a form from
+    our own page in some browsers) is allowed; a *foreign* Origin is not.
+    """
+    var origin = String(req.headers.get("origin"))
+    if origin.byte_length() == 0:
+        return True
+    var allowed = allowed_hosts()
+    for h in allowed:
+        if origin.endswith("://" + h) or origin.startswith("http://" + h + ":") \
+            or origin.startswith("https://" + h + ":"):
+            return True
+    return False
+
+
+def refuse(reason: String) raises -> Response:
+    var r = Response(403, "Forbidden", to_bytes(reason + "\n"))
+    r.headers.set("content-type", "text/plain; charset=utf-8")
+    return r^
 
 
 def status_class(s: String) -> String:
@@ -562,6 +621,11 @@ def review_one(req: Request) raises -> Response:
 
 
 def submit_review(req: Request) raises -> Response:
+    if read_only():
+        return refuse("read-only: this deployment cannot submit a review")
+    if not origin_ok(req):
+        return refuse("cross-site request refused")
+
     """Record what changed, then release the loop.
 
     Only fields the reviewer actually altered become edits: submitting an
@@ -594,6 +658,11 @@ def submit_review(req: Request) raises -> Response:
 
 
 def new_scene(req: Request) raises -> Response:
+    if read_only():
+        return refuse("read-only: this deployment cannot start a run")
+    if not origin_ok(req):
+        return refuse("cross-site request refused")
+
     """Start a run on a fresh random seed. Generation itself is a stage."""
     var seed = Int(random_ui64(1, 100000))
     var work = work_root() + "/seed" + String(seed)
@@ -605,6 +674,11 @@ def new_scene(req: Request) raises -> Response:
 
 
 def step_once(req: Request) raises -> Response:
+    if read_only():
+        return refuse("read-only: this deployment cannot advance a run")
+    if not origin_ok(req):
+        return refuse("cross-site request refused")
+
     """Ask the orchestrator to advance this run by one stage."""
     var id = String(req.param("id"))
     var store = Store(ops_path())
@@ -691,6 +765,20 @@ def main() raises:
             names += ", "
         names += hosts[i]
     print("answering to Host:", names)
+    if read_only():
+        print("read-only: the write endpoints are disabled")
+    else:
+        var public = False
+        for h in hosts:
+            if h != "127.0.0.1" and h != "localhost" and h != "[::1]":
+                public = True
+        if public:
+            print(
+                "WARNING: writes are ENABLED and a non-loopback host is"
+                " allowed. Anyone who can reach this can start runs and edit"
+                " labels. Set LABELCONTROL_READONLY=1 or put an access policy"
+                " in front."
+            )
 
     var srv = HttpServer.bind(addr)
     srv.serve(Guarded(r^), num_workers=1)
