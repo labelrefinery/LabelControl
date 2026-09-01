@@ -36,6 +36,7 @@ from std.os import getenv, makedirs
 from std.os.path import exists
 from std.random import random_ui64, seed as seed_rng
 
+from embedded import VIEWER_HTML, VIEWER_SCRIPT
 from paths import short_path as _short
 from store import DecisionRow, Invocation, ReviewTask, StepRow, Store
 
@@ -79,6 +80,29 @@ font-weight:550;cursor:pointer;text-decoration:none}
 border:1px solid var(--border)}
 .actions{display:flex;gap:.6rem;margin:1.2rem 0}
 .empty{color:var(--ink-3);font-style:italic}
+.viewer{border:1px solid var(--border);border-radius:10px;background:var(--surface-2);
+margin:1.5rem 0;overflow:hidden}
+.viewer-bar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
+padding:.7rem .9rem;border-bottom:1px solid var(--border)}
+.viewer-bar label{color:var(--ink-3);font-size:.86rem}
+.viewer-bar select{font:inherit;font-family:var(--mono);font-size:.86rem;
+padding:.25rem .4rem;border:1px solid var(--border);border-radius:6px;
+background:var(--surface);color:var(--ink)}
+.viewer-status{color:var(--ink-2);font-size:.86rem;font-variant-numeric:tabular-nums}
+.viewer-pager{margin-left:auto;display:flex;gap:.4rem}
+.viewer-pager button{font:inherit;font-size:.86rem;padding:.25rem .7rem;
+border:1px solid var(--border);border-radius:6px;background:var(--surface);
+color:var(--ink);cursor:pointer}
+.viewer-pager button:disabled{opacity:.45;cursor:default}
+.viewer .scroll{margin:0;max-height:26rem;overflow:auto}
+.viewer table{font-size:.82rem;font-family:var(--mono)}
+.viewer thead th{position:sticky;top:0;background:var(--surface-2);
+font-family:var(--sans);font-size:.8rem;white-space:nowrap}
+.viewer td{font-variant-numeric:tabular-nums;white-space:nowrap}
+.viewer .null{color:var(--ink-3);font-style:italic}
+.viewer-foot{margin:0;padding:.6rem .9rem;border-top:1px solid var(--border);
+color:var(--ink-3);font-size:.82rem}
+.scroll{overflow-x:auto}
 """
 
 
@@ -99,7 +123,7 @@ def esc(s: String) -> String:
     return out^
 
 
-def page(title: String, body: String) -> String:
+def page(title: String, body: String, tail: String = "") -> String:
     return String(
         "<!doctype html><html lang=en><head><meta charset=utf-8>",
         "<meta name=viewport content='width=device-width,initial-scale=1'>",
@@ -108,10 +132,14 @@ def page(title: String, body: String) -> String:
         " — label control</title><style>",
         STYLE,
         "</style></head><body><header><div class=wrap>",
-        "<a href='/'>label control</a> · <a href='/review'>review queue</a></div></header>",
+        "<a href='/'>label control</a> · <a href='/data'>the scene</a>"
+        " · <a href='/datasets'>datasets</a> · <a href='/review'>review queue</a>"
+        "</div></header>",
         "<div class=wrap>",
         body,
-        "</div></body></html>",
+        "</div>",
+        tail,
+        "</body></html>",
     )
 
 
@@ -657,6 +685,81 @@ def submit_review(req: Request) raises -> Response:
     return redirect("/review")
 
 
+comptime SCENE_MCAP = "https://samples.magmalake.org/sitegen/v0.2.0/site_seed1_60s.mcap"
+comptime LABELS_MCAP = "https://samples.magmalake.org/sitegen/v0.2.0/labels_rounds.mcap"
+
+
+def foxglove_url(with_labels: Bool) -> String:
+    """A Foxglove web link that streams the published MCAPs over range requests.
+
+    Foxglove fetches these itself, from the visitor's browser -- so the data has
+    to stay publicly hosted wherever the link happens to live.
+    """
+    var base = String(
+        "https://app.foxglove.dev/~/view?ds=remote-file&ds.url="
+    )
+    var scene = String(
+        "https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.2.0%2F"
+        "site_seed1_60s.mcap"
+    )
+    var labels = String(
+        "&ds.url=https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.2.0%2F"
+        "labels_rounds.mcap"
+    )
+    return base + scene + (labels if with_labels else String(""))
+
+
+def data_page(req: Request) raises -> Response:
+    var body = String("<h1>Look at the scene</h1>")
+    body += (
+        "<p>The recording and every round of labels open in Foxglove with"
+        " nothing to install. The 86 MB scene is read over HTTP range"
+        " requests, so playback starts without pulling the whole file.</p>"
+    )
+    body += String(
+        "<div class=actions><a class=button href='",
+        foxglove_url(True),
+        "'>Scene and every round of labels →</a>",
+        "<a class='button ghost' href='",
+        foxglove_url(False),
+        "'>Scene only →</a></div>",
+    )
+    body += (
+        "<h2>What to turn on</h2><p>Add a <strong>3D</strong> panel and set"
+        " <em>display frame</em> to <code>map</code>. Then"
+        " <code>/lidar/points</code> coloured by intensity,"
+        " <code>/ground_truth/actors</code> for the held-out oracle, and"
+        " <code>/pred/*</code> for one topic per pipeline round.</p>"
+        "<p>Scrub to <strong>t ≈ 25 s</strong>: round 0 has objects standing on"
+        " the stockpile and round 2 does not.</p>"
+    )
+    body += (
+        "<div class=note><p><code>/ground_truth/*</code> is the oracle. It is"
+        " in the file so you can see what a labeler was up against — a labeler"
+        " must never read it.</p></div>"
+    )
+    return html(page("The scene", body))
+
+
+def datasets_page(req: Request) raises -> Response:
+    var body = String("<h1>The datasets</h1>")
+    body += (
+        "<p>Labels and ground truth as Apache Iceberg tables. Nothing is"
+        " downloaded up front and there is no server in the path: the browser"
+        " reads the Iceberg metadata, walks the manifests and pulls only the"
+        " byte ranges of Parquet it needs.</p>"
+    )
+    body += VIEWER_HTML
+    body += (
+        "<p>The viewer is <a href='https://github.com/hyparam/icebird'>icebird</a>,"
+        " about 43 KB of pure JavaScript — no WebAssembly. It resolves the"
+        " table's current snapshot from <code>version-hint.text</code>, so the"
+        " rows you are looking at are pinned to a snapshot id rather than to"
+        " whatever happens to be latest. That id is printed under the table.</p>"
+    )
+    return html(page("Datasets", body, VIEWER_SCRIPT))
+
+
 def new_scene(req: Request) raises -> Response:
     if read_only():
         return refuse("read-only: this deployment cannot start a run")
@@ -747,6 +850,8 @@ def main() raises:
     r.get("/invocations/:id", detail)
     r.post("/scenes/new", new_scene)
     r.post("/invocations/:id/step", step_once)
+    r.get("/data", data_page)
+    r.get("/datasets", datasets_page)
     r.get("/review", review_queue)
     r.get("/review/:id", review_one)
     r.post("/review/:id", submit_review)
