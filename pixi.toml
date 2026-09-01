@@ -38,4 +38,5 @@ LC_INCLUDES = "-I src -I ../../millfolio/flare -I ../../millfolio/json"
 # flare's TLS/HTTP C shims must land in THIS env's $CONDA_PREFIX/lib.
 flare-ffi = "bash -c 'source ../../millfolio/flare/flare/tls/ffi/build.sh; source ../../millfolio/flare/flare/http/ffi/build.sh'"
 build = { cmd = "mojo build $LC_INCLUDES src/server.mojo -o build/labelcontrol", description = "Build the control site" }
+test = { cmd = "mojo run $LC_INCLUDES test/test_paths.mojo", description = "Path rendering tests" }
 serve = { cmd = "./build/labelcontrol", depends-on = ["build"], description = "Serve on 127.0.0.1:10001" }

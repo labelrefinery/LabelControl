@@ -36,6 +36,7 @@ from std.os import getenv, makedirs
 from std.os.path import exists
 from std.random import random_ui64, seed as seed_rng
 
+from paths import short_path as _short
 from store import DecisionRow, Invocation, ReviewTask, StepRow, Store
 
 
@@ -226,6 +227,10 @@ def host_allowed(req: Request) raises -> Bool:
     return False
 
 
+def short_path(path: String) -> String:
+    return _short(path, work_root())
+
+
 def status_class(s: String) -> String:
     if s == "ok" or s == "done":
         return String("ok")
@@ -272,7 +277,7 @@ def timeline(req: Request) raises -> Response:
             "<tr><td class=mono>",
             esc(inv.created_at),
             "</td><td class=mono>",
-            esc(inv.scene_path),
+            esc(short_path(inv.scene_path)),
             "</td><td class=mono>",
             inv.seed,
             "</td><td><span class='pill ",
@@ -300,14 +305,14 @@ def detail(req: Request) raises -> Response:
     var steps = store.steps(id)
     var decisions = store.decisions(id)
 
-    var body = String("<h1>Run ", esc(inv.scene_path), "</h1>")
+    var body = String("<h1>Run ", esc(short_path(inv.scene_path)), "</h1>")
     body += String(
         "<p><code>",
         esc(inv.id),
         "</code> · seed <code>",
         inv.seed,
         "</code> · work <code>",
-        esc(inv.work_dir),
+        esc(short_path(inv.work_dir)),
         "</code> · <span class='pill ",
         status_class(inv.status),
         "'>",
@@ -503,7 +508,7 @@ def review_queue(req: Request) raises -> Response:
             "<tr><td class=mono>",
             esc(t.created_at),
             "</td><td class=mono>",
-            esc(t.labels_path),
+            esc(short_path(t.labels_path)),
             "</td><td><a href='/review/",
             esc(t.id),
             "'>review →</a></td></tr>",
@@ -524,7 +529,7 @@ def review_one(req: Request) raises -> Response:
     var body = String("<h1>Review labels</h1>")
     body += String(
         "<p><code>",
-        esc(task.labels_path),
+        esc(short_path(task.labels_path)),
         "</code> · ",
         len(tracks),
         " tracks · the loop is suspended until you submit.</p>",
