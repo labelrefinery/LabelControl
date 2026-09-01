@@ -21,6 +21,24 @@ Environment: `LABELCONTROL_OPS` (the orchestrator's `ops.db`),
 `LABELCONTROL_WORK` (where run directories go), `LABELCONTROL_SITEGEN`,
 `LABELCONTROL_RESTATE` (ingress, default `http://127.0.0.1:8080`).
 
+## Exposing it
+
+Loopback only by default, and the `Host` header must be one it answers to --
+binding 127.0.0.1 stops remote connections, but DNS rebinding can still point a
+browser tab here with an attacker-controlled Host.
+
+To serve it through a Cloudflare Tunnel, allow the public name:
+
+```sh
+LABELCONTROL_ALLOWED_HOSTS=demo.labelrefinery.org ./run.sh
+cloudflared tunnel --url http://127.0.0.1:10001 run <tunnel>
+```
+
+**Put an access policy in front of it.** Nothing here authenticates. The
+buttons start jobs and resolve reviews, so anyone who can reach it can spend
+your CPU and edit your labels. Cloudflare Access with an email policy is the
+smallest thing that closes that.
+
 ## How it fits
 
 The site does not share a process with the orchestrator and does not call it

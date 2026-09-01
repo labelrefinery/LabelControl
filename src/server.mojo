@@ -7,13 +7,21 @@ Restate ingress.
 
     pixi run serve            # http://127.0.0.1:10001
 
-Loopback only, with a Host allow-list, following millfolio/vault/app/server:
-binding 127.0.0.1 stops remote connections, but a DNS-rebinding attack can
-still make a browser send a request here with an attacker-controlled Host. The
-allow-list is what closes that.
+Loopback only by default, with a Host allow-list, following
+millfolio/vault/app/server: binding 127.0.0.1 stops remote connections, but a
+DNS-rebinding attack can still make a browser send a request here with an
+attacker-controlled Host. The allow-list is what closes that.
+
+To serve this through a Cloudflare Tunnel, add the public hostname to
+`LABELCONTROL_ALLOWED_HOSTS` (comma-separated) -- the tunnel forwards the
+original Host, so without it every request is refused. **Put an access policy
+in front of it.** Nothing here authenticates: the buttons start jobs and
+resolve reviews, so anyone who can reach it can spend your CPU and edit your
+labels.
 """
 
 from flare.http import (
+    Handler,
     Method,
     Request,
     Response,
@@ -162,6 +170,42 @@ def loop_payload(inv: Invocation, sitegen: String) -> String:
         inv.seed,
         '"',
     )
+
+
+def allowed_hosts() -> List[String]:
+    """Loopback names, plus whatever `LABELCONTROL_ALLOWED_HOSTS` adds."""
+    var out = List[String]()
+    out.append(String("127.0.0.1"))
+    out.append(String("localhost"))
+    out.append(String("[::1]"))
+    var extra = getenv("LABELCONTROL_ALLOWED_HOSTS", "")
+    for part in extra.split(","):
+        var one = String(String(part).strip())
+        if one.byte_length() > 0:
+            out.append(one^)
+    return out^
+
+
+def host_allowed(req: Request) raises -> Bool:
+    """True when the request's Host is one we answer to.
+
+    The port is stripped before comparing, so `127.0.0.1:10001` matches
+    `127.0.0.1`. A request with no Host at all is refused rather than allowed:
+    every real client sends one.
+    """
+    var raw = String(req.headers.get("host"))
+    if raw.byte_length() == 0:
+        return False
+    var name = raw
+    # Strip the port, but not from a bracketed IPv6 literal's colons.
+    if not raw.startswith("["):
+        var parts = raw.split(":")
+        name = String(parts[0])
+    var allowed = allowed_hosts()
+    for h in allowed:
+        if name == h:
+            return True
+    return False
 
 
 def status_class(s: String) -> String:
@@ -552,6 +596,24 @@ def step_once(req: Request) raises -> Response:
     return redirect("/invocations/" + id)
 
 
+@fieldwise_init
+struct Guarded(Copyable, Handler, Movable):
+    """The Host gate, in front of every route rather than inside each one.
+
+    A check repeated in each handler is a check that a new route forgets. This
+    one cannot be forgotten: nothing reaches the router without passing it.
+    """
+
+    var inner: Router
+
+    def serve(self, req: Request) raises -> Response:
+        if not host_allowed(req):
+            var denied = Response(403)
+            denied.headers.set("content-type", "text/plain; charset=utf-8")
+            return denied^
+        return self.inner.serve(req)
+
+
 def main() raises:
     # Without this the generator is deterministic across process starts, so
     # every restart hands out the same "random" seed and the second run
@@ -569,5 +631,13 @@ def main() raises:
 
     var addr = SocketAddr.localhost(10001)
     print("label control on http://127.0.0.1:10001 — ops.db:", ops_path())
+    var hosts = allowed_hosts()
+    var names = String("")
+    for i in range(len(hosts)):
+        if i > 0:
+            names += ", "
+        names += hosts[i]
+    print("answering to Host:", names)
+
     var srv = HttpServer.bind(addr)
-    srv.serve(r^, num_workers=1)
+    srv.serve(Guarded(r^), num_workers=1)

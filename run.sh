@@ -16,6 +16,9 @@ CTL=${LABELCONTROL_ROOT:-$LR/control}
 export LABELCONTROL_OPS=${LABELCONTROL_OPS:-$CTL/ops.db}
 export LABELCONTROL_WORK=${LABELCONTROL_WORK:-$CTL/runs}
 export LABELCONTROL_SITEGEN=${LABELCONTROL_SITEGEN:-$LR/sitegen}
+# Serving through a tunnel? The public hostname must be here, because the
+# tunnel forwards the original Host and anything unlisted gets a 403.
+export LABELCONTROL_ALLOWED_HOSTS=${LABELCONTROL_ALLOWED_HOSTS:-}
 
 stop() {
   pkill -f "build/labelcontrol" 2>/dev/null || true
