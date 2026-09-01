@@ -133,7 +133,8 @@ def page(title: String, body: String, tail: String = "") -> String:
         STYLE,
         "</style></head><body><header><div class=wrap>",
         "<a href='/'>label control</a> · <a href='/data'>the scene</a>"
-        " · <a href='/datasets'>datasets</a> · <a href='/review'>review queue</a>"
+        " · <a href='/datasets'>datasets</a> · <a href='/gold'>gold</a>"
+        " · <a href='/review'>review queue</a>"
         "</div></header>",
         "<div class=wrap>",
         body,
@@ -760,6 +761,117 @@ def datasets_page(req: Request) raises -> Response:
     return html(page("Datasets", body, VIEWER_SCRIPT))
 
 
+def gold_queue(req: Request) raises -> Response:
+    var store = Store(ops_path())
+    var tasks = store.open_reviews(String("gold"))
+    var body = String("<h1>Gold labelling</h1>")
+    body += (
+        "<p>A gold set is what you score against, so it is authored rather"
+        " than corrected: nothing becomes truth unless someone vouches for"
+        " it. Tracks you do not keep are dropped.</p>"
+    )
+    if len(tasks) == 0:
+        body += "<p class=empty>No scenes waiting to be labelled.</p>"
+        return html(page("Gold labelling", body))
+    body += (
+        "<table><thead><tr><th>opened</th><th>candidates</th><th></th>"
+        "</tr></thead><tbody>"
+    )
+    for t in tasks:
+        body += String(
+            "<tr><td class=mono>",
+            esc(t.created_at),
+            "</td><td class=mono>",
+            esc(short_path(t.labels_path)),
+            "</td><td><a href='/gold/",
+            esc(t.id),
+            "'>label →</a></td></tr>",
+        )
+    body += "</tbody></table>"
+    return html(page("Gold labelling", body))
+
+
+def gold_one(req: Request) raises -> Response:
+    var id = String(req.param("id"))
+    var store = Store(ops_path())
+    var found = store.review(id)
+    if not found:
+        return not_found("no such task")
+    ref task = found.value()
+
+    var tracks = read_tracks(task.labels_path)
+    var body = String("<h1>Author a gold set</h1>")
+    body += String(
+        "<p><code>",
+        esc(short_path(task.labels_path)),
+        "</code> · ",
+        len(tracks),
+        " candidate tracks · keep the ones you would stand behind.</p>",
+    )
+    body += String("<form method=post action='/gold/", esc(task.id), "'>")
+    body += (
+        "<table><thead><tr><th>keep</th><th>track</th><th>rows</th>"
+        "<th>proposed</th><th>class</th></tr></thead><tbody>"
+    )
+    for t in tracks:
+        body += String(
+            "<tr><td><input type=checkbox name='keep_",
+            esc(t[0]),
+            "' value='1'></td><td class=mono>",
+            esc(t[0]),
+            "</td><td class=mono>",
+            esc(t[2]),
+            "</td><td class=mono>",
+            esc(t[1]),
+            "</td><td><input name='cls_",
+            esc(t[0]),
+            "' value='",
+            esc(t[1]),
+            "' style='font:inherit;padding:.2rem .4rem;border:1px solid"
+            " var(--border);border-radius:5px;background:var(--surface);"
+            "color:var(--ink)'></td></tr>",
+        )
+    body += "</tbody></table>"
+    body += (
+        "<div class=actions><button class=button type=submit>"
+        "Publish as gold and resume</button></div></form>"
+    )
+    return html(page("Gold labelling", body))
+
+
+def submit_gold(req: Request) raises -> Response:
+    if read_only():
+        return refuse("read-only: this deployment cannot publish a gold set")
+    if not origin_ok(req):
+        return refuse("cross-site request refused")
+
+    var id = String(req.param("id"))
+    var store = Store(ops_path())
+    var found = store.review(id)
+    if not found:
+        return not_found("no such task")
+    ref task = found.value()
+
+    var tracks = read_tracks(task.labels_path)
+    var form = parse_form(req.text())
+    for t in tracks:
+        # Unchecked means excluded. An unanswered track must not become truth
+        # by default, so only an explicit keep is recorded.
+        if form_get(form, String("keep_") + t[0]) != "1":
+            continue
+        store.add_edit(task.id, t[0], String("keep"), String(""), String("1"))
+        var name = form_get(form, String("cls_") + t[0])
+        if name.byte_length() > 0 and name != t[1]:
+            store.add_edit(task.id, t[0], String("cls"), t[1], name)
+
+    var client = HttpClient()
+    _ = client.post(
+        ingress() + "/restate/awakeables/" + task.awakeable_id + "/resolve",
+        String('"gold"'),
+    )
+    return redirect("/gold")
+
+
 def new_scene(req: Request) raises -> Response:
     if read_only():
         return refuse("read-only: this deployment cannot start a run")
@@ -852,6 +964,9 @@ def main() raises:
     r.post("/invocations/:id/step", step_once)
     r.get("/data", data_page)
     r.get("/datasets", datasets_page)
+    r.get("/gold", gold_queue)
+    r.get("/gold/:id", gold_one)
+    r.post("/gold/:id", submit_gold)
     r.get("/review", review_queue)
     r.get("/review/:id", review_one)
     r.post("/review/:id", submit_review)

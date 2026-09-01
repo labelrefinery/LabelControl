@@ -17,6 +17,10 @@ from sqlite import Database
 # writes a row before the orchestrator has ever opened the database. Every
 # statement is IF NOT EXISTS, so whoever gets there first wins and the other
 # is a no-op.
+comptime MIGRATIONS = """
+ALTER TABLE review_task ADD COLUMN kind TEXT NOT NULL DEFAULT 'review'
+"""
+
 comptime SCHEMA = """
 CREATE TABLE IF NOT EXISTS pipeline_invocation (
   id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -66,11 +70,19 @@ CREATE TABLE IF NOT EXISTS review_task (
   invocation_id TEXT NOT NULL REFERENCES pipeline_invocation(id),
   step_run_id   TEXT,
   labels_path   TEXT NOT NULL,
+  -- review corrects a machine's labels, gold authors a reference set a human
+  -- stands behind. Same waiting machinery, different claim about the result,
+  -- so the kind travels with the task rather than being inferred.
+  kind          TEXT NOT NULL DEFAULT 'review',
   status        TEXT NOT NULL DEFAULT 'open',
   awakeable_id  TEXT,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   resolved_at   TEXT
 );
+-- The awakeable id is the natural key: a replayed handler re-creates the same
+-- awakeable, so opening a review task must be idempotent.
+CREATE UNIQUE INDEX IF NOT EXISTS review_task_by_awakeable
+  ON review_task (awakeable_id);
 
 CREATE TABLE IF NOT EXISTS review_edit (
   id             TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -126,6 +138,7 @@ struct ReviewTask(Copyable, Movable):
     var id: String
     var invocation_id: String
     var labels_path: String
+    var kind: String
     var status: String
     var awakeable_id: String
     var created_at: String
@@ -150,6 +163,17 @@ struct Store(Movable):
             var sql = String(String(part).strip())
             if sql.byte_length() > 0:
                 self.db.execute(sql)
+        # CREATE TABLE IF NOT EXISTS never adds a column to a table that
+        # already exists, so an additive change would break a database that
+        # was working. Same list as Refinery's, applied the same way.
+        for line in MIGRATIONS.split("\n"):
+            var stmt = String(String(line).strip())
+            if stmt.byte_length() == 0:
+                continue
+            try:
+                self.db.execute(stmt)
+            except:
+                pass
 
     def invocations(mut self, limit: Int = 50) raises -> List[Invocation]:
         var out = List[Invocation]()
@@ -237,13 +261,15 @@ struct Store(Movable):
             )
         return out^
 
-    def open_reviews(mut self) raises -> List[ReviewTask]:
+    def open_reviews(mut self, kind: String = "review") raises -> List[ReviewTask]:
         var out = List[ReviewTask]()
         var q = self.db.prepare(
-            "SELECT id, invocation_id, labels_path, status,"
+            "SELECT id, invocation_id, labels_path, kind, status,"
             " COALESCE(awakeable_id,''), created_at"
-            " FROM review_task WHERE status = 'open' ORDER BY created_at"
+            " FROM review_task WHERE status = 'open' AND kind = ?"
+            " ORDER BY created_at"
         )
+        q.bind_text(1, kind)
         while True:
             var row = q.step()
             if not row:
@@ -257,13 +283,14 @@ struct Store(Movable):
                     r.text_val(3),
                     r.text_val(4),
                     r.text_val(5),
+                    r.text_val(6),
                 )
             )
         return out^
 
     def review(mut self, task_id: String) raises -> Optional[ReviewTask]:
         var q = self.db.prepare(
-            "SELECT id, invocation_id, labels_path, status,"
+            "SELECT id, invocation_id, labels_path, kind, status,"
             " COALESCE(awakeable_id,''), created_at"
             " FROM review_task WHERE id = ?"
         )
@@ -280,6 +307,7 @@ struct Store(Movable):
                 r.text_val(3),
                 r.text_val(4),
                 r.text_val(5),
+                r.text_val(6),
             )
         )
 
