@@ -183,6 +183,13 @@ def loop_payload(inv: Invocation, sitegen: String) -> String:
     )
 
 
+def to_bytes(s: String) -> List[UInt8]:
+    var out = List[UInt8]()
+    for b in s.as_bytes():
+        out.append(b)
+    return out^
+
+
 def allowed_hosts() -> List[String]:
     """Loopback names, plus whatever `LABELCONTROL_ALLOWED_HOSTS` adds."""
     var out = List[String]()
@@ -619,7 +626,32 @@ struct Guarded(Copyable, Handler, Movable):
 
     def serve(self, req: Request) raises -> Response:
         if not host_allowed(req):
-            var denied = Response(403)
+            # Say which Host was refused and what is allowed. A bare 403 sends
+            # you looking at Cloudflare, the tunnel, and DNS before the one
+            # place that actually rejected it -- which is exactly the wrong
+            # order, and the common cause is simply a public hostname missing
+            # from LABELCONTROL_ALLOWED_HOSTS.
+            var seen = String(req.headers.get("host"))
+            var names = String("")
+            var allowed = allowed_hosts()
+            for i in range(len(allowed)):
+                if i > 0:
+                    names += ", "
+                names += allowed[i]
+            print(
+                "refused Host:",
+                seen if seen.byte_length() > 0 else String("(none)"),
+                "— allowed:",
+                names,
+            )
+            var body = String(
+                "Refused: this server does not answer to Host '",
+                seen,
+                "'.\nAllowed: ",
+                names,
+                "\nAdd it with LABELCONTROL_ALLOWED_HOSTS.\n",
+            )
+            var denied = Response(403, "Forbidden", to_bytes(body))
             denied.headers.set("content-type", "text/plain; charset=utf-8")
             return denied^
         return self.inner.serve(req)
