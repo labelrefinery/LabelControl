@@ -32,7 +32,7 @@ comptime VIEWER_HTML = """<div class="viewer" id="viewer">
 
 
 comptime VIEWER_SCRIPT = """<script type="module">
-  const BASE = "https://samples.magmalake.org/datasets/v0.2.0";
+  const BASE = "https://samples.magmalake.org/datasets/v0.3.0";
   const PAGE = 50;
 
   const el = (id) => document.getElementById(id);

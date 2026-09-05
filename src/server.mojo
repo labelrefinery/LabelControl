@@ -686,8 +686,8 @@ def submit_review(req: Request) raises -> Response:
     return redirect("/review")
 
 
-comptime SCENE_MCAP = "https://samples.magmalake.org/sitegen/v0.2.0/site_seed1_60s.mcap"
-comptime LABELS_MCAP = "https://samples.magmalake.org/sitegen/v0.2.0/labels_rounds.mcap"
+comptime SCENE_MCAP = "https://samples.magmalake.org/sitegen/v0.3.0/site_seed1_60s.mcap"
+comptime LABELS_MCAP = "https://samples.magmalake.org/sitegen/v0.3.0/labels_rounds.mcap"
 
 
 def foxglove_url(with_labels: Bool) -> String:
@@ -700,11 +700,11 @@ def foxglove_url(with_labels: Bool) -> String:
         "https://app.foxglove.dev/~/view?ds=remote-file&ds.url="
     )
     var scene = String(
-        "https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.2.0%2F"
+        "https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.3.0%2F"
         "site_seed1_60s.mcap"
     )
     var labels = String(
-        "&ds.url=https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.2.0%2F"
+        "&ds.url=https%3A%2F%2Fsamples.magmalake.org%2Fsitegen%2Fv0.3.0%2F"
         "labels_rounds.mcap"
     )
     return base + scene + (labels if with_labels else String(""))
@@ -714,7 +714,7 @@ def data_page(req: Request) raises -> Response:
     var body = String("<h1>Look at the scene</h1>")
     body += (
         "<p>The recording and every round of labels open in Foxglove with"
-        " nothing to install. The 86 MB scene is read over HTTP range"
+        " nothing to install. The 100 MB scene is read over HTTP range"
         " requests, so playback starts without pulling the whole file.</p>"
     )
     body += String(
