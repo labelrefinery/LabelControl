@@ -1,1 +1,1 @@
-{"cluster_name":"localcluster","cluster_fingerprint":16980056967951829984,"max_version":"1.7.8","current_version":"1.7.8","min_forward_compatible_version":"1.6.0","is_provisioned":true,"use_multi_db_layout":false}
+{"cluster_name":"localcluster","cluster_fingerprint":16980056967951829984,"max_version":"1.8.1","current_version":"1.8.1","min_forward_compatible_version":"1.7.0","is_provisioned":true,"use_multi_db_layout":false}

@@ -11,32 +11,25 @@ channels = [
 platforms = ["osx-arm64"]
 
 [dependencies]
-mojo = "==1.0.0"
-# std.gpu moved into `max` in 1.0, and the json sibling flare needs imports it.
-max = "==26.5.0"
-# flare is consumed by SOURCE PATH (-I), not as a package: its own pixi build
-# backend needs a newer pixi than this machine has, and millfolio hit the same
-# wall. Consuming by path also means flare's `mojo ==1.0.0b1` pin does not
-# apply, so this env can stay on stable alongside sqlite-mojo.
-openssl          = ">=3.6.1,<4"
-ca-certificates  = ">=2025.1.31"
-zlib             = ">=1.3.1,<2"
-libbrotlicommon  = ">=1,<2"
-libbrotlidec     = ">=1,<2"
-libbrotlienc     = ">=1,<2"
+mojo = "==1.2.0"
+# flare comes from the published tin, magmalake's packaged build of flare,
+# pinned at the revision mojoshelf published for flare_mlake 0.13.0 (built
+# with Mojo 1.2.0). The package carries flare's TLS/HTTP C shims and json, so
+# nothing is consumed by source path any more.
+flare_mlake = { git = "https://github.com/magmalake/flare_mlake.git", rev = "0cb5005489bb1af57ca0421b8f0fcd206bbacf42" }
+# pixi does not follow a git package's own git dependencies, so flare's two
+# are listed here, at the revisions mojoshelf published (json_mlake 0.4.2,
+# threads-mojo 0.6.1).
+json_mlake = { git = "https://github.com/magmalake/json_mlake.git", rev = "d850b1c90487e1e9a88ac87d1c1d7f53ffba7276" }
+threads-mojo = { git = "https://github.com/magmalake/threads.mojo.git", rev = "f45e780a8de77278c140cee36904e46e93e0ca1c" }
 # The ops database the orchestrator writes. This site only reads it.
-sqlite-mojo = { git = "https://github.com/magmalake/sqlite.mojo" }
+sqlite-mojo = { git = "https://github.com/magmalake/sqlite.mojo", rev = "53b819cd395b1b0afe8772dfbb43489da6ce939e" }  # 0.3.4
 libsqlite = ">=3.45,<4"
 
 [activation.env]
-# flare and its json dependency come from the millfolio checkout, which is
-# pinned at flare's "Mojo 1.0.0 / MAX 26.5.0 -- the release" commit. The
-# standalone dev/flare checkout is months older and does not compile here.
-LC_INCLUDES = "-I src -I ../../millfolio/flare -I ../../millfolio/json"
+LC_INCLUDES = "-I src"
 
 [tasks]
-# flare's TLS/HTTP C shims must land in THIS env's $CONDA_PREFIX/lib.
-flare-ffi = "bash -c 'source ../../millfolio/flare/flare/tls/ffi/build.sh; source ../../millfolio/flare/flare/http/ffi/build.sh'"
 build = { cmd = "mojo build $LC_INCLUDES src/server.mojo -o build/labelcontrol", description = "Build the control site" }
 test = { cmd = "mojo run $LC_INCLUDES test/test_paths.mojo", description = "Path rendering tests" }
 serve = { cmd = "./build/labelcontrol", depends-on = ["build"], description = "Serve on 127.0.0.1:10001" }

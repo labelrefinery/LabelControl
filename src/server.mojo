@@ -650,16 +650,15 @@ def review_one(req: Request) raises -> Response:
 
 
 def submit_review(req: Request) raises -> Response:
-    if read_only():
-        return refuse("read-only: this deployment cannot submit a review")
-    if not origin_ok(req):
-        return refuse("cross-site request refused")
-
     """Record what changed, then release the loop.
 
     Only fields the reviewer actually altered become edits: submitting an
     unchanged form should be a no-op, not a rewrite of every row.
     """
+    if read_only():
+        return refuse("read-only: this deployment cannot submit a review")
+    if not origin_ok(req):
+        return refuse("cross-site request refused")
     var id = String(req.param("id"))
     var store = Store(ops_path())
     var found = store.review(id)
@@ -873,12 +872,11 @@ def submit_gold(req: Request) raises -> Response:
 
 
 def new_scene(req: Request) raises -> Response:
+    """Start a run on a fresh random seed. Generation itself is a stage."""
     if read_only():
         return refuse("read-only: this deployment cannot start a run")
     if not origin_ok(req):
         return refuse("cross-site request refused")
-
-    """Start a run on a fresh random seed. Generation itself is a stage."""
     var seed = Int(random_ui64(1, 100000))
     var work = work_root() + "/seed" + String(seed)
     if not exists(work):
@@ -889,12 +887,11 @@ def new_scene(req: Request) raises -> Response:
 
 
 def step_once(req: Request) raises -> Response:
+    """Ask the orchestrator to advance this run by one stage."""
     if read_only():
         return refuse("read-only: this deployment cannot advance a run")
     if not origin_ok(req):
         return refuse("cross-site request refused")
-
-    """Ask the orchestrator to advance this run by one stage."""
     var id = String(req.param("id"))
     var store = Store(ops_path())
     var found = store.invocation(id)

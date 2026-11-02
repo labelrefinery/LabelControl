@@ -5,7 +5,6 @@ what order, and what the router was choosing between. A
 [flare](https://github.com/ehsanmok/flare) server in Mojo, on loopback.
 
 ```sh
-pixi run flare-ffi     # once: build flare's C shims into this env
 ./run.sh               # everything: restate, executor, orchestrator, site
 ./run.sh stop
 ```
@@ -64,12 +63,13 @@ Two buttons. *New random scene* picks a seed and creates a run; generation
 itself is a pipeline stage, so it shows up on the timeline like everything
 else. *Run next stage* asks the orchestrator to advance by one.
 
-## Why flare comes from the millfolio checkout
+## Where flare comes from
 
-`../../millfolio/flare` is pinned at flare's "Mojo 1.0.0 / MAX 26.5.0 — the
-release" commit. The standalone `dev/flare` checkout is months older and does
-not compile against 1.0.0. flare is consumed by **source path**, not as a
-package: its own build backend wants a newer pixi than this machine has, which
-is the same wall millfolio hit. Consuming by path also means flare's
-`mojo ==1.0.0b1` pin does not apply, so this environment stays on stable
-alongside `sqlite-mojo`.
+flare is the published [flare_mlake](https://mojoshelf.org/tins/flare_mlake)
+tin, magmalake's packaged build of flare, as a git dependency pinned at the
+revision mojoshelf published for 0.13.0. That build uses Mojo 1.2.0, the same
+compiler as Refinery and `sqlite-mojo`. The package installs flare's
+TLS, HTTP, zlib and brotli shims into the environment, so there is no
+`flare-ffi` step and no sibling checkout to keep at the right commit. pixi
+does not follow a git package's own git dependencies, so flare's two,
+`json_mlake` and `threads-mojo`, are listed in `pixi.toml` beside it.
