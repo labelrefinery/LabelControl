@@ -12,6 +12,10 @@ millfolio/vault/app/server: binding 127.0.0.1 stops remote connections, but a
 DNS-rebinding attack can still make a browser send a request here with an
 attacker-controlled Host. The allow-list is what closes that.
 
+In a container, `LABELCONTROL_ADDR` (`host:port`, say `0.0.0.0:20000`) binds
+another address than loopback; the Host allow-list still applies, so a proxy
+in front must send a name it lists.
+
 To serve this through a Cloudflare Tunnel, add the public hostname to
 `LABELCONTROL_ALLOWED_HOSTS` (comma-separated) -- the tunnel forwards the
 original Host, so without it every request is refused. **Put an access policy
@@ -167,6 +171,15 @@ def port() -> UInt16:
         return UInt16(Int(Float64(raw)))
     except:
         return 20000
+
+
+def listen_addr() raises -> SocketAddr:
+    """Loopback on `port()`, unless `LABELCONTROL_ADDR` (`host:port`) says
+    otherwise, as it must in a container."""
+    var v = getenv("LABELCONTROL_ADDR", "")
+    if v != "":
+        return SocketAddr.parse(v)
+    return SocketAddr.localhost(port())
 
 
 def ops_path() -> String:
@@ -968,10 +981,9 @@ def main() raises:
     r.get("/review/:id", review_one)
     r.post("/review/:id", submit_review)
 
-    var listen = port()
-    var addr = SocketAddr.localhost(listen)
+    var addr = listen_addr()
     print(
-        String("label control on http://127.0.0.1:") + String(listen),
+        String("label control on http://") + String(addr),
         "— ops.db:",
         ops_path(),
     )
